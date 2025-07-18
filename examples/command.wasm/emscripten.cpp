@@ -13,6 +13,8 @@
 #include <vector>
 #include <regex>
 
+#include "grammar-parser.h"
+
 constexpr int N_THREAD = 8;
 
 std::vector<struct whisper_context *> g_contexts(4, nullptr);
@@ -28,16 +30,41 @@ std::string g_transcribed   = "";
 
 std::vector<float> g_pcmf32;
 
+grammar_parser::parse_state g_grammar_parsed;
+std::vector<const whisper_grammar_element *> g_grammar_rules;
+float g_grammar_penalty = 100.0f;
+
+void command_set_grammar(const std::string & grammar) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_grammar_parsed = grammar_parser::parse(grammar.c_str());
+    g_grammar_rules = g_grammar_parsed.c_rules();
+}
+
+void command_set_grammar_penalty(float penalty) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_grammar_penalty = penalty;
+}
+
 void command_set_status(const std::string & status) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_status = status;
 }
 
-std::string command_transcribe(whisper_context * ctx, const whisper_full_params & wparams, const std::vector<float> & pcmf32, float & prob, int64_t & t_ms) {
+std::string command_transcribe(whisper_context * ctx, whisper_full_params wparams, const std::vector<float> & pcmf32, float & prob, int64_t & t_ms) {
     const auto t_start = std::chrono::high_resolution_clock::now();
 
     prob = 0.0f;
     t_ms = 0;
+
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        if (!g_grammar_rules.empty()) {
+            wparams.grammar_rules   = g_grammar_rules.data();
+            wparams.n_grammar_rules = g_grammar_rules.size();
+            wparams.i_start_rule    = 0;
+            wparams.grammar_penalty = g_grammar_penalty;
+        }
+    }
 
     if (whisper_full(ctx, wparams, pcmf32.data(), pcmf32.size()) != 0) {
         return "";
@@ -323,5 +350,13 @@ EMSCRIPTEN_BINDINGS(command) {
             std::lock_guard<std::mutex> lock(g_mutex);
             g_status_forced = status;
         }
+    }));
+
+    emscripten::function("set_grammar", emscripten::optional_override([](const std::string & grammar) {
+        command_set_grammar(grammar);
+    }));
+
+    emscripten::function("set_grammar_penalty", emscripten::optional_override([](float penalty) {
+        command_set_grammar_penalty(penalty);
     }));
 }

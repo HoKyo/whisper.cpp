@@ -74,6 +74,13 @@
                 <button id="clear" onclick="clearCache()">Clear Cache</button>
             </div>
 
+            <div id="grammar-settings">
+                <textarea id="grammar" rows="4" cols="80" placeholder="Enter GBNF grammar here"></textarea>
+                <br>
+                Grammar penalty: <input type="number" id="grammar-penalty" value="100">
+                <button onclick="applyGrammar()">Set Grammar</button>
+            </div>
+
             <br>
 
             <div id="state">
@@ -366,6 +373,14 @@
             var intervalUpdate = null;
             var transcribedAll = '';
 
+            function applyGrammar() {
+                if (!Module || !Module.set_grammar) return;
+                var g = document.getElementById('grammar').value;
+                Module.set_grammar(g);
+                var p = parseFloat(document.getElementById('grammar-penalty').value);
+                if (!isNaN(p)) Module.set_grammar_penalty(p);
+            }
+
             function onStart() {
                 if (!instance) {
                     instance = Module.init('whisper.bin');
@@ -380,6 +395,7 @@
                     return;
                 }
 
+                applyGrammar();
                 startRecording();
 
                 intervalUpdate = setInterval(function() {
